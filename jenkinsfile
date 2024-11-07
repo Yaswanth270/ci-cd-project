@@ -1,76 +1,69 @@
 def COLOR_MAP = [
     'SUCCESS': 'good',
     'FAILURE': 'danger'
-    ]
+]
+
 pipeline {
     agent any
-     environment {
+
+    environment {
         SCANNER_HOME = tool 'sonar-qube'
     }
+
     stages {
         stage('git checkout') {
             steps {
-             git branch: 'main', url: 'https://github.com/Yaswanth270/ci-cd-project.git'
+                git branch: 'main', url: 'https://github.com/Yaswanth270/ci-cd-project.git'
             }
         }
-         stage('compile') {
+        stage('compile') {
             steps {
-              sh 'mvn compile'
+                sh 'mvn compile'
             }
         }
-         stage('code analysis') {
+        stage('code analysis') {
             steps {
-              withSonarQubeEnv('sonar-server') {
-               sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=ci-cd-project \
-               -Dsonar.java.binaries=. \
-               -Dsonar.projectKey=ci-cd-project'''
-              }
+                withSonarQubeEnv('sonar-server') {
+                    sh ''' 
+                    $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=ci-cd-project \
+                    -Dsonar.java.binaries=. \
+                    -Dsonar.projectKey=ci-cd-project
+                    '''
+                }
             }
         }
         stage('Package') {
             steps {
-              sh 'mvn install'
+                sh 'mvn install'
             }
         }
-         stage('docker build') {
+        stage('docker build') {
             steps {
-             script {
-                 withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                    sh 'docker build -t spring-boot .'
-                  }
-              }
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh 'docker build -t spring-boot:${BUILD_NUMBER} .'
+                    }
+                }
             }
         }
-         stage('docker push') {
+        stage('docker container') {
             steps {
-             script {
-                withDockerRegistry(credentialsId: 'docker push', toolName: 'docker') {
-                    sh 'docker tag spring-boot yaswanth270/spring-boot'
-                    sh 'docker push yaswanth270/spring-boot'
-                  }
-              }
-            }
-         }    
-        stage('docker compose') {
-            steps {
-             script {
-                 withDockerRegistry(credentialsId: 'docker push', toolName: 'docker') {
-                    sh 'docker-compose up -d'
-                  }
-              }
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        // Run the container from the built image
+                        sh 'docker run -d --name spring-boot-container -p 8080:8080 spring-boot:${BUILD_NUMBER}'
+                    }
+                }
             }
         }
+    }
 
-    }	
- 
     post {
         always {
-            echo 'slack Notification.'
+            echo 'Slack Notification.'
             slackSend channel: '#java-spring-ci-cd',
-            color: COLOR_MAP [currentBuild.currentResult],
-            message: "*${currentBuild.currentResult}:* Job ${env.JOB_NAME} build ${env.BUILD_NUMBER} \n More info at: ${env.BUILD_URl}"
-            
+                      color: COLOR_MAP[currentBuild.currentResult],
+                      message: "*${currentBuild.currentResult}:* Job ${env.JOB_NAME} build ${env.BUILD_NUMBER} \n More info at: ${env.BUILD_URL}"
         }
     }
 }
-
